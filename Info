@@ -1,0 +1,294 @@
+ 1. MIGRACIONES (Base de Datos)
+  Ubicación: database/migrations/
+
+    1 // Tabla Autor
+    public function up(): void
+    {
+        Schema::create('autor', function (Blueprint $table) {
+            $table->string('dni')->primary();
+            $table->string('nombre');
+            $table->string('nacionalidad');
+        });
+    }
+    
+    8 // Tabla Libro
+    public function up(): void
+    {
+        Schema::create('libro', function (Blueprint $table) {
+            $table->string('codigo')->primary();
+            $table->string('titulo');
+            $table->string('autor_dni');
+            $table->foreign('autor_dni')->references('dni')->on('autor');
+        });
+    }
+
+  2. MODELOS (Configuración y Relaciones)
+  Ubicación: app/Models/
+
+    1 // Autor.php
+class Autor extends Model
+{
+    protected $table = 'autor';
+    protected $primaryKey = 'dni';
+    protected $keyType= 'string';
+    public $incrementing = false;
+    public $timestamps = false;
+    protected $fillable = [
+        'dni',
+        'nombre',
+        'nacionalidad',
+    ];
+    public function libros(){
+        return $this->hasMany(Libro::class, 'autor_dni', 'dni');
+    }
+    
+}
+   11 // Libro.php
+class Libro extends Model
+{
+    protected $table = 'libro';
+    protected $primaryKey = 'codigo';
+    protected $keyType = 'string';
+    public $incrementing = false;
+    public $timestamps = false;
+    protected $fillable = [
+        'codigo',
+        'titulo',
+        'autor_dni'
+    ];
+    public function autor()
+    {
+    return $this->belongsTo(Autor::class, 'autor_dni', 'dni');
+    }
+}
+
+  3. RUTAS (El mapa)
+  Ubicación: routes/web.php
+
+use Illuminate\Support\Facades\Route;
+
+use App\Http\Controllers\AutorController;
+use App\Http\Controllers\LibroController;
+
+Route::get('/', [AutorController::class, 'index']);
+
+// CRUD de Autores con parámetro 'dni'
+Route::resource('autores', AutorController::class)->parameters([
+    'autores' => 'dni'
+]);
+
+// CRUD de Libros con parámetro 'codigo'
+Route::resource('libros', LibroController::class)->parameters([
+    'libros' => 'codigo'
+]);
+
+
+  4. CONTROLADORES (Lógica AJAX/JSON)
+  Ubicación: app/Http/Controllers/
+
+use App\Models\Autor;
+
+class AutorController extends Controller
+{
+    public function index() { return response()->json(Autor::all()); }
+
+    public function store(Request $request)
+    {
+        $a = Autor::create($request->all());
+        return response()->json($a);
+    }
+
+    public function show(Autor $dni) { return response()->json($dni->load('libros')); }
+    public function edit(Autor $dni) { return response()->json($dni); }
+
+    public function update(Request $request, Autor $dni)
+    {
+        $dni->update($request->all());
+        return response()->json($dni);
+    }
+
+    public function destroy(Autor $dni)
+    {
+        $dni->delete();
+        return response()->json(['res' => 'ok']);
+    }
+}
+
+
+
+📘 LIBRO CONTROLLER (Resumido AJAX)
+  Ubicación: app/Http/Controllers/LibroController.php
+
+use App\Models\Libro;
+use App\Models\Autor;
+
+class LibroController extends Controller
+{
+    public function index() { return response()->json(Libro::with('autor')->get()); }
+
+    public function store(Request $request)
+    {
+        $l = Libro::create($request->all());
+        return response()->json($l->load('autor'));
+    }
+
+    public function show(Libro $codigo) { return response()->json($codigo->load('autor')); }
+    public function edit(Libro $codigo) { return response()->json($codigo); }
+
+    public function update(Request $request, Libro $codigo)
+    {
+        $codigo->update($request->all());
+        return response()->json($codigo->load('autor'));
+    }
+
+    public function destroy(Libro $codigo)
+    {
+        $codigo->delete();
+        return response()->json(['res' => 'ok']);
+    }
+}
+
+
+ 1. EL LAYOUT BASE (resources/views/layouts/app.blade.php)
+  Este es el cascarón que envuelve a las demás páginas.
+
+    1 <!DOCTYPE html>
+    2 <html lang="es">
+    3 <head>
+    4     <meta charset="UTF-8">
+    5     <title>Examen Laravel AJAX - @yield('title')</title>
+    6 </head>
+    7 <body>
+    8     <nav>
+    9         <a href="{{ route('autores.index') }}">Gestionar Autores</a> |
+   10         <a href="{{ route('libros.index') }}">Gestionar Libros</a>
+   11     </nav>
+   12     <hr>
+   13
+   14     <!-- Aquí se inyecta el contenido de cada vista -->
+   15     @yield('content')
+   16
+   17 </body>
+   18 </html>
+
+  ---
+
+  2. VISTA DE AUTORES (resources/views/autors.blade.php)
+  Maneja todo el CRUD de Autores sin recargar la página.
+
+   @extends('layouts.app')
+@section('title', 'Autores AJAX')
+
+@section('content')
+    <form id="form" onsubmit="save(event)">
+        @csrf <div id="method"></div>
+        <input type="text" id="dni" name="dni" placeholder="DNI" required>
+        <input type="text" id="nombre" name="nombre" placeholder="Nombre" required>
+        <input type="text" id="nacionalidad" name="nacionalidad" placeholder="Nacionalidad" required>
+        <button type="submit" id="btn">Guardar</button>
+    </form>
+    <hr>
+    <table border="1"><tbody id="tabla"></tbody></table>
+    <ul id="lista"></ul>
+
+    <script>
+        const reload = () => fetch('/autores').then(r => r.json()).then(data => {
+            document.getElementById('tabla').innerHTML = data.map(a => `
+                <tr>
+                    <td>${a.dni} - ${a.nombre} (${a.nacionalidad})</td>
+                    <td>
+                        <button onclick="ver('${a.dni}')">Ver</button>
+                        <button onclick="edit('${a.dni}')">Editar</button>
+                        <button onclick="del('${a.dni}')">Borrar</button>
+                    </td>
+                </tr>`).join('');
+        });
+
+        const save = (e) => {
+            e.preventDefault();
+            let fd = new FormData(e.target);
+            let url = document.getElementById('method').innerHTML ? `/autores/${document.getElementById('dni').value}` : '/autores';
+            fetch(url, { method: 'POST', body: fd }).then(reload).then(() => e.target.reset());
+        }
+
+        const edit = (dni) => fetch(`/autores/${dni}/edit`).then(r => r.json()).then(data => {
+            document.getElementById('method').innerHTML = '@method("PUT")';
+            document.getElementById('dni').value = data.dni;
+            document.getElementById('dni').readOnly = true;
+            document.getElementById('nombre').value = data.nombre;
+            document.getElementById('nacionalidad').value = data.nacionalidad;
+            document.getElementById('btn').innerText = "Actualizar";
+        });
+
+        const del = (dni) => confirm('¿Borrar?') && fetch(`/autores/${dni}`, {
+            method: 'POST', body: new FormData() 
+        }).then(r => {
+            let fd = new FormData(); fd.append('_method', 'DELETE'); fd.append('_token', '{{csrf_token()}}');
+            return fetch(`/autores/${dni}`, { method: 'POST', body: fd });
+        }).then(reload);
+
+        const ver = (dni) => fetch(`/autores/${dni}`).then(r => r.json()).then(data => {
+            document.getElementById('lista').innerHTML = data.libros.map(l => `<li>${l.titulo}</li>`).join('');
+        });
+
+        reload();
+    </script>
+@endsection
+
+
+  ---
+   @extends('layouts.app')
+@section('title', 'Libros AJAX')
+
+@section('content')
+    <form id="form" onsubmit="save(event)">
+        @csrf <div id="method"></div>
+        <input type="text" id="codigo" name="codigo" placeholder="Código" required>
+        <input type="text" id="titulo" name="titulo" placeholder="Título" required>
+        <select id="autor_dni" name="autor_dni" required>
+            <option value="">Autor...</option>
+            @foreach(\App\Models\Autor::all() as $a) <option value="{{ $a->dni }}">{{ $a->nombre }}</option> @endforeach
+        </select>
+        <button type="submit" id="btn">Guardar</button>
+    </form>
+    <hr>
+    <table border="1"><tbody id="tabla"></tbody></table>
+
+    <script>
+        const reload = () => fetch('/libros').then(r => r.json()).then(data => {
+            document.getElementById('tabla').innerHTML = data.map(l => `
+                <tr>
+                    <td>${l.codigo} - ${l.titulo} (${l.autor.nombre})</td>
+                    <td>
+                        <button onclick="edit('${l.codigo}')">Editar</button>
+                        <button onclick="del('${l.codigo}')">Borrar</button>
+                    </td>
+                </tr>`).join('');
+        });
+
+        const save = (e) => {
+            e.preventDefault();
+            let fd = new FormData(e.target);
+            let url = document.getElementById('method').innerHTML ? `/libros/${document.getElementById('codigo').value}` : '/libros';
+            fetch(url, { method: 'POST', body: fd }).then(reload).then(() => e.target.reset());
+        }
+
+        const edit = (id) => fetch(`/libros/${id}/edit`).then(r => r.json()).then(data => {
+            document.getElementById('method').innerHTML = '@method("PUT")';
+            document.getElementById('codigo').value = data.codigo;
+            document.getElementById('codigo').readOnly = true;
+            document.getElementById('titulo').value = data.titulo;
+            document.getElementById('autor_dni').value = data.autor_dni;
+            document.getElementById('btn').innerText = "Actualizar";
+        });
+
+        const del = (id) => {
+            if(!confirm('¿Borrar?')) return;
+            let fd = new FormData(); fd.append('_method', 'DELETE'); fd.append('_token', '{{csrf_token()}}');
+            fetch(`/libros/${id}`, { method: 'POST', body: fd }).then(reload);
+        }
+
+        reload();
+    </script>
+@endsection
+
