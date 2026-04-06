@@ -1,4 +1,11 @@
- 1. MIGRACIONES (Base de Datos)
+composer create-project laravel/Laravel NOMBRE
+php artisan serve                                		- encender el servidor
+php artisan make:model Estudiante -m                 		- Crear un nuevo archivo modelo en App/Models
+php artisan migrate                              		- Migrar la base de datos en base al Conexion.php que se creo
+php artisan make:controller EstudianteController --resource 	- Crear un controlador 
+php artisan install:api    					- Al ejecutar este comando, se crea routes/api.php e instala dependencias
+
+1. MIGRACIONES (Base de Datos)
   Ubicación: database/migrations/
 
     1 // Tabla Autor
