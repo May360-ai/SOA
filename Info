@@ -86,11 +86,25 @@ Route::resource('libros', LibroController::class)->parameters([
   4. CONTROLADORES (Lógica AJAX/JSON)
   Ubicación: app/Http/Controllers/
 
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
 use App\Models\Autor;
 
 class AutorController extends Controller
 {
-    public function index() { return response()->json(Autor::all()); }
+    public function index()
+    {
+        if (request()->wantsJson() || request()->ajax()) {
+            $q = request('q');
+            return response()->json(Autor::when($q, function ($query) use ($q) {
+                return $query->where('nombre', 'like', "%$q%");
+            })->get());
+        }
+        return view('autors');
+    }
 
     public function store(Request $request)
     {
@@ -119,12 +133,26 @@ class AutorController extends Controller
 📘 LIBRO CONTROLLER (Resumido AJAX)
   Ubicación: app/Http/Controllers/LibroController.php
 
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
 use App\Models\Libro;
 use App\Models\Autor;
 
 class LibroController extends Controller
 {
-    public function index() { return response()->json(Libro::with('autor')->get()); }
+    public function index()
+    {
+        if (request()->wantsJson() || request()->ajax()) {
+            $q = request('q');
+            return response()->json(Libro::with('autor')->when($q, function ($query) use ($q) {
+                return $query->where('titulo', 'like', "%$q%");
+            })->get());
+        }
+        return view('libros');
+    }
 
     public function store(Request $request)
     {
@@ -152,31 +180,36 @@ class LibroController extends Controller
  1. EL LAYOUT BASE (resources/views/layouts/app.blade.php)
   Este es el cascarón que envuelve a las demás páginas.
 
-    1 <!DOCTYPE html>
-    2 <html lang="es">
-    3 <head>
-    4     <meta charset="UTF-8">
-    5     <title>Examen Laravel AJAX - @yield('title')</title>
-    6 </head>
-    7 <body>
-    8     <nav>
-    9         <a href="{{ route('autores.index') }}">Gestionar Autores</a> |
-   10         <a href="{{ route('libros.index') }}">Gestionar Libros</a>
-   11     </nav>
-   12     <hr>
-   13
-   14     <!-- Aquí se inyecta el contenido de cada vista -->
-   15     @yield('content')
-   16
-   17 </body>
-   18 </html>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Estudio Laravel - @yield('title')</title>
+</head>
+<body>
+    <nav>
+        <a href="{{ route('autores.index') }}">Autores</a> | 
+        <a href="{{ route('libros.index') }}">Libros</a>
+    </nav>
+    <hr>
+
+    @if(session('success'))
+        <p style="color: green;">{{ session('success') }}</p>
+    @endif
+
+
+    @yield('content')
+
+</body>
+</html>
+
 
   ---
 
   2. VISTA DE AUTORES (resources/views/autors.blade.php)
   Maneja todo el CRUD de Autores sin recargar la página.
 
-   @extends('layouts.app')
+@extends('layouts.app')
 @section('title', 'Autores AJAX')
 
 @section('content')
@@ -187,22 +220,28 @@ class LibroController extends Controller
         <input type="text" id="nacionalidad" name="nacionalidad" placeholder="Nacionalidad" required>
         <button type="submit" id="btn">Guardar</button>
     </form>
+    <input type="text" id="buscar" placeholder="Buscar por nombre..." onkeyup="reload()">
     <hr>
     <table border="1"><tbody id="tabla"></tbody></table>
     <ul id="lista"></ul>
 
     <script>
-        const reload = () => fetch('/autores').then(r => r.json()).then(data => {
-            document.getElementById('tabla').innerHTML = data.map(a => `
-                <tr>
-                    <td>${a.dni} - ${a.nombre} (${a.nacionalidad})</td>
-                    <td>
-                        <button onclick="ver('${a.dni}')">Ver</button>
-                        <button onclick="edit('${a.dni}')">Editar</button>
-                        <button onclick="del('${a.dni}')">Borrar</button>
-                    </td>
-                </tr>`).join('');
-        });
+        const reload = () => {
+            let q = document.getElementById('buscar').value;
+            fetch(`/autores?q=${q}`, { headers: { 'Accept': 'application/json' } })
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('tabla').innerHTML = data.map(a => `
+                        <tr>
+                            <td>${a.dni} - ${a.nombre} (${a.nacionalidad})</td>
+                            <td>
+                                <button onclick="ver('${a.dni}')">Ver</button>
+                                <button onclick="edit('${a.dni}')">Editar</button>
+                                <button onclick="del('${a.dni}')">Borrar</button>
+                            </td>
+                        </tr>`).join('');
+                });
+        }
 
         const save = (e) => {
             e.preventDefault();
@@ -236,8 +275,9 @@ class LibroController extends Controller
 @endsection
 
 
+
   ---
-   @extends('layouts.app')
+  @extends('layouts.app')
 @section('title', 'Libros AJAX')
 
 @section('content')
@@ -251,20 +291,26 @@ class LibroController extends Controller
         </select>
         <button type="submit" id="btn">Guardar</button>
     </form>
+    <input type="text" id="buscar" placeholder="Buscar por título..." onkeyup="reload()">
     <hr>
     <table border="1"><tbody id="tabla"></tbody></table>
 
     <script>
-        const reload = () => fetch('/libros').then(r => r.json()).then(data => {
-            document.getElementById('tabla').innerHTML = data.map(l => `
-                <tr>
-                    <td>${l.codigo} - ${l.titulo} (${l.autor.nombre})</td>
-                    <td>
-                        <button onclick="edit('${l.codigo}')">Editar</button>
-                        <button onclick="del('${l.codigo}')">Borrar</button>
-                    </td>
-                </tr>`).join('');
-        });
+        const reload = () => {
+            let q = document.getElementById('buscar').value;
+            fetch(`/libros?q=${q}`, { headers: { 'Accept': 'application/json' } })
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('tabla').innerHTML = data.map(l => `
+                        <tr>
+                            <td>${l.codigo} - ${l.titulo} (${l.autor.nombre})</td>
+                            <td>
+                                <button onclick="edit('${l.codigo}')">Editar</button>
+                                <button onclick="del('${l.codigo}')">Borrar</button>
+                            </td>
+                        </tr>`).join('');
+                });
+        }
 
         const save = (e) => {
             e.preventDefault();
@@ -291,4 +337,3 @@ class LibroController extends Controller
         reload();
     </script>
 @endsection
-
